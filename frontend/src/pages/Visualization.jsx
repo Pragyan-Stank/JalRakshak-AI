@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import DeckGL from '@deck.gl/react';
+import { FlyToInterpolator } from '@deck.gl/core';
 import { ScatterplotLayer } from '@deck.gl/layers';
 import { HeatmapLayer } from '@deck.gl/aggregation-layers';
 import { Map } from 'react-map-gl/maplibre';
@@ -15,8 +16,8 @@ const INITIAL_VIEW_STATE = {
   bearing: 0
 };
 
-// Using a free CARTO basemap
-const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+// Using a standard, vibrant light daytime CARTO basemap (similar to Google Maps)
+const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
 
 const Visualization = () => {
   const [data, setData] = useState([]);
@@ -64,9 +65,16 @@ const Visualization = () => {
          setViewState(v => ({
            ...v,
            longitude: result.points[0].lon,
-           latitude: result.points[0].lat
+           latitude: result.points[0].lat,
+           zoom: 14,
+           transitionDuration: 3000,
+           transitionInterpolator: new FlyToInterpolator()
          }));
+      } else {
+         alert("Inference Complete: No Marine Plastics / Debris were detected in this image!");
       }
+    } else {
+       alert("Error processing the image or connecting to the local U-Net framework.");
     }
   };
 
@@ -76,9 +84,9 @@ const Visualization = () => {
       data,
       getPosition: d => [d.lon, d.lat],
       getWeight: d => d.probability,
-      radiusPixels: 40,
-      intensity: 1,
-      threshold: 0.1
+      radiusPixels: 25,
+      intensity: 3,
+      threshold: 0.05
     }),
     new ScatterplotLayer({
       id: 'scatterplot-layer',
