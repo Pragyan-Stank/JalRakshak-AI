@@ -100,13 +100,22 @@ class UNetInferencer:
             debris_probs = probs[1, :, :]
             return debris_probs
 
+# Global singleton to avoid intensive model re-loading on every API call
+_global_inferencer = None
+
+def get_inferencer():
+    global _global_inferencer
+    if _global_inferencer is None:
+        _global_inferencer = UNetInferencer()
+    return _global_inferencer
+
 def run_marine_debris_pipeline(image_data: np.ndarray, tif_path: str = None) -> list:
     """
     Simulates the core logic pipeline: UNet + FDI combined scoring.
     image_data: raw optical array shape MUST BE (11, 256, 256) per MARIDA standard.
     """
     # 1. Run inference (standardisation mapping is handled inside predict)
-    inferencer = UNetInferencer()
+    inferencer = get_inferencer()
     unet_probs = inferencer.predict(image_data)
     
     # 2. Extract specific bands to generate FDI and combine

@@ -4,8 +4,11 @@ import numpy as np
 import os
 import rasterio
 
-from app.schemas.predict import PredictionResponse
+from app.schemas.predict import PredictionResponse, PatchInferenceRequest
 from app.models.inference import run_marine_debris_pipeline
+from app.services.sentinel_service import fetch_sentinel2_patch
+from app.services.patch_inference_service import process_live_patch
+from app.services.clustering_service import compute_clusters
 
 router = APIRouter()
 
@@ -60,6 +63,40 @@ async def predict_debris(file: UploadFile = File(...)):
         print(f"Inference error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.post("/patch-inference", response_model=PredictionResponse)
+async def live_patch_inference(request: PatchInferenceRequest):
+    """
+    Simulates real-time tracking by fetching a live satellite grid via Sentinel Hub
+    and passing the optical swath directly into the active U-Net architecture.
+    Groups dense fields into clusters across the dashboard via DBSCAN.
+    """
+    global live_hotspots
+    try:
+        # Scale the resolution dynamically (10km is ~512 optical grid constraint)
+        size_mapping = {2: 128, 5: 256, 10: 512}  
+        resolution = size_mapping.get(request.resolution, 256)
+        
+        # 1. Fetch satellite swath dynamically across chosen Bounds
+        img_data = fetch_sentinel2_patch(request.bbox, max_size=resolution)
+        
+        # 2. Execute inference and remap to geo-coordinates perfectly
+        points = process_live_patch(img_data, request.bbox)
+        
+        # 3. Group the individual pixels into macro clusters utilizing DBSCAN
+        clusters = compute_clusters(points)
+        live_hotspots = points
+        
+        return PredictionResponse(
+            status="success",
+            message="Live Bounding-Box Inference & Clustering completed.",
+            points=points,
+            clusters=clusters,
+            metadata={"source": "Sentinel-2 Live", "bounds": request.bbox}
+        )
+    except Exception as e:
+        print(f"Patch inference error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/visualization-data", response_model=PredictionResponse)
 async def get_visualization_data():

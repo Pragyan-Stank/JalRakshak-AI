@@ -28,3 +28,17 @@ export const predictDebris = async (file) => {
     return null;
   }
 };
+
+export const fetchPatchInference = async (bbox, resolution, dateRange) => {
+  try {
+    const response = await axios.post(`${API_URL}/patch-inference`, {
+      bbox,
+      resolution,
+      date_range: dateRange
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching patch inference:", error);
+    return null;
+  }
+};
