@@ -195,3 +195,80 @@ async def get_cleanup_hotspots(hours: float = 72):
 async def get_detection_history():
     """Returns summary of the detection store."""
     return get_history_summary()
+
+
+# ─── Coast Guard Operations Endpoints ─────────────────────────────────
+
+@router.post("/threat-assessment")
+async def get_threat_assessment(lat: float, lon: float, density: int = 10, confidence: float = 0.5):
+    """Assess threat level for a debris location, checking MPA proximity."""
+    from app.services.coastguard_service import assess_threat
+    return assess_threat(lat, lon, density, confidence)
+
+
+@router.post("/intercept-plan")
+async def plan_intercept(
+    debris_lat: float, debris_lon: float,
+    vessel_lat: float, vessel_lon: float,
+    vessel_speed_knots: float = 22
+):
+    """
+    Compute optimal intercept point where a vessel can meet drifting debris.
+    First predicts the debris trajectory, then finds the earliest interception.
+    """
+    from app.services.coastguard_service import compute_intercept
+    hotspot = predict_trajectory_for_point(debris_lat, debris_lon, label="INTERCEPT")
+    intercept = compute_intercept(
+        hotspot["trajectory"], vessel_lat, vessel_lon, vessel_speed_knots
+    )
+    return {
+        "status": "success",
+        "debris_origin": {"lat": debris_lat, "lon": debris_lon},
+        "vessel_origin": {"lat": vessel_lat, "lon": vessel_lon},
+        "intercept": intercept,
+        "trajectory": hotspot["trajectory"],
+    }
+
+
+@router.post("/dispatch-plan")
+async def generate_dispatch(hours: float = 72):
+    """
+    Generate a full dispatch plan from current cleanup zones.
+    Returns vessel assignments, threat assessments, and ETAs for each zone.
+    """
+    from app.services.cleanup_service import build_cleanup_intelligence
+    from app.services.coastguard_service import generate_dispatch_plan
+    intel = build_cleanup_intelligence(max_age_hours=hours)
+    if not intel.get("clusters"):
+        return {"status": "empty", "dispatches": [], "message": "No zones to dispatch."}
+    dispatches = generate_dispatch_plan(intel["clusters"])
+    return {"status": "success", "dispatches": dispatches, "summary": intel["summary"]}
+
+
+@router.get("/persistent-zones")
+async def get_persistent_zones(hours: float = 168):
+    """Detect chronic debris accumulation zones over the selected time window."""
+    from app.services.coastguard_service import detect_persistent_zones
+    zones = detect_persistent_zones(max_age_hours=hours)
+    return {"status": "success", "zones": zones, "total": len(zones)}
+
+
+@router.post("/optimal-route")
+async def get_optimal_route(vessel_lat: float, vessel_lon: float, hours: float = 72):
+    """
+    Computes optimal greedy route to visit all active cleanup zones.
+    """
+    from app.services.cleanup_service import build_cleanup_intelligence
+    from app.services.coastguard_service import compute_optimal_route
+    intel = build_cleanup_intelligence(max_age_hours=hours)
+    
+    if not intel.get("clusters"):
+        return {"status": "empty", "route": [], "total_distance_km": 0}
+        
+    result = compute_optimal_route(intel["clusters"], vessel_lat, vessel_lon)
+    return {
+        "status": "success",
+        "route": result["route"],
+        "total_distance_km": result["total_distance_km"],
+        "vessel_origin": {"lat": vessel_lat, "lon": vessel_lon}
+    }

@@ -6,7 +6,7 @@ import { HeatmapLayer } from '@deck.gl/aggregation-layers';
 import { Map } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { getVisualizationData, predictDebris, fetchPatchInference } from '../services/api';
-import { Upload, Target, Activity, Download, Clock, BarChart3, MapPin, AlertTriangle, Crosshair, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Upload, Target, Activity, Download, Clock, BarChart3, MapPin, AlertTriangle, Crosshair, Trash2, Eye, EyeOff, Radio } from 'lucide-react';
 
 const INITIAL_VIEW_STATE = {
   longitude: -86.33591,
@@ -292,14 +292,18 @@ const Visualization = () => {
         {/* Upload Card */}
         <div className="control-card">
             <div className="card-title"><Upload size={18}/> Direct Ingestion</div>
-            <p style={{fontSize: '0.75rem', color: '#94a3b8', marginBottom: '15px'}}>Upload MARIDA .TIF patches for high-resolution validation.</p>
-            <div style={{position: 'relative', overflow: 'hidden', display: 'inline-block', width: '100%'}}>
-                <button className="btn glass" style={{width: '100%', justifyContent: 'center', borderColor: 'rgba(255,255,255,0.2)', pointerEvents: 'none'}}>
-                    {loading ? 'Processing Raster...' : 'Browse Local Files'}
-                </button>
-                <input type="file" accept=".tif,.tiff" onChange={handleFileUpload} disabled={loading}
-                    style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%', opacity:0, cursor:'pointer', zIndex:10 }}
-                />
+            <div className={`upload-zone ${loading ? 'active' : ''}`}>
+                <input type="file" accept=".tif,.tiff" onChange={handleFileUpload} disabled={loading} />
+                <div className="upload-zone-icon">
+                  {loading ? <div className="spin"><Activity size={18} color="#00f2ff" /></div> : <Upload size={18} color="#00f2ff" />}
+                </div>
+                <div className="upload-zone-text">
+                  {loading ? (
+                    <><strong>Processing satellite raster...</strong><br/>Running U-Net inference</>
+                  ) : (
+                    <><strong>Drop .TIF here</strong> or click to browse<br/><span style={{fontSize:'0.7rem'}}>MARIDA GeoTIFF • 11-band Sentinel-2</span></>
+                  )}
+                </div>
             </div>
         </div>
 

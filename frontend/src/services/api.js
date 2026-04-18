@@ -96,3 +96,67 @@ export const fetchDetectionHistory = async () => {
     return null;
   }
 };
+
+export const fetchThreatAssessment = async (lat, lon, density = 10, confidence = 0.5) => {
+  try {
+    const response = await axios.post(`${API_URL}/threat-assessment`, null, {
+      params: { lat, lon, density, confidence }
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching threat assessment:", error);
+    return null;
+  }
+};
+
+export const fetchInterceptPlan = async (debrisLat, debrisLon, vesselLat, vesselLon, speedKnots = 22) => {
+  try {
+    const response = await axios.post(`${API_URL}/intercept-plan`, null, {
+      params: {
+        debris_lat: debrisLat, debris_lon: debrisLon,
+        vessel_lat: vesselLat, vessel_lon: vesselLon,
+        vessel_speed_knots: speedKnots,
+      }
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error computing intercept:", error);
+    return null;
+  }
+};
+
+export const fetchDispatchPlan = async (hours = 72) => {
+  try {
+    const response = await axios.post(`${API_URL}/dispatch-plan`, null, { params: { hours } });
+    return response.data;
+  } catch (error) {
+    console.error("Error generating dispatch:", error);
+    return null;
+  }
+};
+
+export const fetchPersistentZones = async (hours = 168) => {
+  try {
+    const response = await axios.get(`${API_URL}/persistent-zones`, { params: { hours } });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching persistent zones:", error);
+    return null;
+  }
+};
+
+export const fetchOptimalRoute = async (vesselLat, vesselLon, hours = 72) => {
+  try {
+    const response = await axios.post(`${API_URL}/optimal-route`, null, {
+      params: {
+        vessel_lat: vesselLat,
+        vessel_lon: vesselLon,
+        hours: hours
+      }
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching optimal route:", error);
+    return null;
+  }
+};
