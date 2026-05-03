@@ -7,7 +7,7 @@ __pycache__/
 MARIDA/
 data/
 backend/data/
-backend/trained_models/
+
 *.tif
 *.pth
 *.h5
