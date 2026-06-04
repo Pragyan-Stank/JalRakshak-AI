@@ -8,3 +8,8 @@ rasterio
 pillow
 python-multipart
 scikit-learn
+requests
+pyproj
+sentinelhub
+langchain-groq
+langchain-core

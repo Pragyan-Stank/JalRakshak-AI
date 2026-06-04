@@ -19,6 +19,7 @@ Band mapping (MARIDA 11-band order):
 """
 
 import os
+import requests
 import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -58,6 +59,74 @@ DATE_RANGE_MAP = {
     "last_5_days": 30,
 }
 
+# ── Module-level SentinelHub config & DataCollection (initialised once) ────────
+# Calling DataCollection.define_from() on every request registers a new enum
+# entry each time, causing "definition is already taken" on the second call.
+# We build the config and custom collection a single time here at import.
+
+_SH_CONFIG = None
+_S2_COLLECTION = None
+
+
+def _init_sh_config():
+    """Builds SHConfig and the custom SENTINEL2_L2A DataCollection once."""
+    global _SH_CONFIG, _S2_COLLECTION
+    if _SH_CONFIG is not None:
+        return  # already initialised
+
+    if not CLIENT_ID or not CLIENT_SECRET:
+        return  # no credentials – will fall back to simulation
+
+    from sentinelhub import SHConfig, DataCollection
+
+    config = SHConfig()
+    config.sh_client_id = CLIENT_ID
+    config.sh_client_secret = CLIENT_SECRET
+
+    # Detect whether these are Sentinel Hub or CDSE credentials by probing
+    # the Sentinel Hub token endpoint (fast, single request at startup).
+    is_sh = False
+    try:
+        resp = requests.post(
+            "https://services.sentinel-hub.com/auth/realms/main/protocol/openid-connect/token",
+            data={
+                "grant_type": "client_credentials",
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=6,
+        )
+        is_sh = resp.status_code == 200
+    except Exception:
+        is_sh = False
+
+    if is_sh:
+        print("[SENTINEL HUB] Credentials validated against Sentinel Hub.")
+        config.sh_token_url = (
+            "https://services.sentinel-hub.com/auth/realms/main/protocol/openid-connect/token"
+        )
+        config.sh_base_url = "https://services.sentinel-hub.com"
+        # Standard Sentinel Hub — use the built-in collection directly (no define_from needed)
+        _S2_COLLECTION = DataCollection.SENTINEL2_L2A
+    else:
+        print("[SENTINEL HUB] Credentials validated against Copernicus Data Space (CDSE).")
+        config.sh_token_url = (
+            "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
+        )
+        config.sh_base_url = "https://sh.dataspace.copernicus.eu"
+        # CDSE needs a custom service_url — define_from is called once here
+        _S2_COLLECTION = DataCollection.SENTINEL2_L2A.define_from(
+            "s2l2a_cdse", service_url=config.sh_base_url
+        )
+
+    _SH_CONFIG = config
+
+
+# Run once at module import
+_init_sh_config()
+# ──────────────────────────────────────────────────────────────────────────────
+
 
 def _generate_fallback_patch(bbox: list, max_size: int = 256) -> np.ndarray:
     """
@@ -80,29 +149,22 @@ def _generate_fallback_patch(bbox: list, max_size: int = 256) -> np.ndarray:
 
 def fetch_sentinel2_patch(bbox: list, size: tuple | int = 256, date_range: str = "last_3_days") -> np.ndarray:
     """
-    Fetches raw Sentinel-2 L2A optical bands (11 channels matching MARIDA) from Copernicus Data Space.
+    Fetches raw Sentinel-2 L2A optical bands (11 channels matching MARIDA) from Sentinel Hub.
     Returns:
         np.ndarray of shape (11, H, W) with reflectance values.
     """
-    if not CLIENT_ID or not CLIENT_SECRET:
-        print("[WARN] Sentinel Hub credentials not found in .env – using fallback simulation.")
-        return _generate_fallback_patch(bbox, size if isinstance(size, int) else max(size))
+    max_size = size if isinstance(size, int) else max(size)
+
+    if _SH_CONFIG is None or _S2_COLLECTION is None:
+        print("[WARN] Sentinel Hub not configured (missing credentials) – using fallback simulation.")
+        return _generate_fallback_patch(bbox, max_size)
 
     try:
-        from sentinelhub import (
-            SHConfig, CRS, BBox as SHBBox,
-            DataCollection, SentinelHubRequest, MimeType
-        )
-
-        config = SHConfig()
-        config.sh_client_id = CLIENT_ID
-        config.sh_client_secret = CLIENT_SECRET
-        config.sh_token_url = "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token"
-        config.sh_base_url = "https://sh.dataspace.copernicus.eu"
+        from sentinelhub import CRS, BBox as SHBBox, SentinelHubRequest, MimeType
 
         sh_bbox = SHBBox(bbox=[bbox[0], bbox[1], bbox[2], bbox[3]], crs=CRS.WGS84)
 
-        days = DATE_RANGE_MAP.get(date_range, 3)
+        days = DATE_RANGE_MAP.get(date_range, 15)
         end_date = datetime.utcnow()
         start_date = end_date - timedelta(days=days)
         time_interval = (start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
@@ -113,11 +175,9 @@ def fetch_sentinel2_patch(bbox: list, size: tuple | int = 256, date_range: str =
             evalscript=EVALSCRIPT,
             input_data=[
                 SentinelHubRequest.input_data(
-                    data_collection=DataCollection.SENTINEL2_L2A.define_from(
-                        "s2l2a", service_url=config.sh_base_url
-                    ),
+                    data_collection=_S2_COLLECTION,
                     time_interval=time_interval,
-                    maxcc=0.3
+                    maxcc=0.3,
                 )
             ],
             responses=[
@@ -125,7 +185,7 @@ def fetch_sentinel2_patch(bbox: list, size: tuple | int = 256, date_range: str =
             ],
             bbox=sh_bbox,
             size=size if isinstance(size, tuple) else (size, size),
-            config=config
+            config=_SH_CONFIG,
         )
 
         data = request.get_data()
@@ -137,7 +197,7 @@ def fetch_sentinel2_patch(bbox: list, size: tuple | int = 256, date_range: str =
 
             if np.mean(patch) < 0.001:
                 print("[WARN] Received empty/no-data patch — likely no imagery for this date range.")
-                return _generate_fallback_patch(bbox, size if isinstance(size, int) else max(size))
+                return _generate_fallback_patch(bbox, max_size)
 
             print(f"[SENTINEL HUB] Successfully received patch: shape={patch.shape}, mean={np.mean(patch):.4f}")
             return patch

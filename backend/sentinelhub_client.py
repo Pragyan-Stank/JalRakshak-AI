@@ -20,6 +20,7 @@ from typing import Any
 
 import pyproj
 import requests
+from dotenv import load_dotenv
 
 from train_unet import Config
 
@@ -140,17 +141,13 @@ def _load_local_env() -> None:
     if _LOCAL_ENV_LOADED:
         return
 
-    env_path = CFG.DATA_DIR / ".env"
+    # Check project root first, then fall back to CFG.DATA_DIR
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        env_path = CFG.DATA_DIR / ".env"
+
     if env_path.exists():
-        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            if key and (key.startswith("SENTINELHUB_") or key not in os.environ):
-                os.environ[key] = value
+        load_dotenv(dotenv_path=env_path)
 
     _LOCAL_ENV_LOADED = True
 
@@ -183,11 +180,11 @@ def get_access_token() -> str:
     if _TOKEN_CACHE["token"] and now < float(_TOKEN_CACHE["expires_at"]) - 60:
         return str(_TOKEN_CACHE["token"])
 
-    client_id = os.getenv("SENTINELHUB_CLIENT_ID")
-    client_secret = os.getenv("SENTINELHUB_CLIENT_SECRET")
+    client_id = os.getenv("SENTINELHUB_CLIENT_ID") or os.getenv("CLIENT_ID")
+    client_secret = os.getenv("SENTINELHUB_CLIENT_SECRET") or os.getenv("CLIENT_SECRET")
     if not client_id or not client_secret:
         raise MissingSentinelHubCredentials(
-            "Set SENTINELHUB_CLIENT_ID and SENTINELHUB_CLIENT_SECRET to enable live Sentinel-2 fetches."
+            "Set SENTINELHUB_CLIENT_ID and SENTINELHUB_CLIENT_SECRET (or CLIENT_ID and CLIENT_SECRET) to enable live Sentinel-2 fetches."
         )
 
     resp = requests.post(
